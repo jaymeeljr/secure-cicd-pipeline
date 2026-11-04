@@ -35,10 +35,12 @@ push / PR
 
 **Second finding, on the first GitHub run:** Semgrep's Flask ruleset flagged the local dev server binding to `0.0.0.0`. It was changed to `127.0.0.1`; the container uses gunicorn, so production behavior is unchanged. The fix went in instead of a suppression comment.
 
+**Third finding:** Trivy failed the build on 5 HIGH CVEs in `pip`/`setuptools` and the libraries pip vendors (`urllib3`, `msgpack`) inside the base image. None are needed at runtime, so they were removed from the final image, shrinking the attack surface rather than ignoring the findings.
+
 ## Hardening applied
 
 **Container (`Dockerfile`)**
-- Multi-stage build: no compilers or build tools in the runtime image
+- Multi-stage build: no compilers, build tools, `pip` or `setuptools` in the runtime image
 - Runs as dedicated non-root user (UID 10001), production WSGI server (gunicorn)
 - Built-in healthcheck; `.dockerignore` keeps tests, git data and `.env` out of the image
 
