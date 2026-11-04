@@ -65,6 +65,7 @@ def security_headers(response):
 
 
 if __name__ == "__main__":
+    # Local development only: bind to loopback. In the container, gunicorn serves the app.
     # Debug mode stays off unless explicitly enabled; never in production.
     debug = os.environ.get("APP_DEBUG", "false").lower() == "true"
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", "8080")), debug=debug)  # nosec B104 - container listens on all interfaces
+    app.run(host="127.0.0.1", port=int(os.environ.get("PORT", "8080")), debug=debug)

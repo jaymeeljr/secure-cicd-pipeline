@@ -20,7 +20,7 @@ jobs:
     name: Secret detection (Gitleaks)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0          # scan full history, not only the last commit
       - name: Run Gitleaks
@@ -35,7 +35,7 @@ jobs:
     container:
       image: semgrep/semgrep:latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Run Semgrep
         run: semgrep scan --config p/python --config p/flask --config p/secrets --config .semgrep/ --error --metrics=off app/
 
@@ -44,8 +44,8 @@ jobs:
     name: Dependency scan (pip-audit)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
       - run: pip install pip-audit==2.9.0
@@ -56,7 +56,7 @@ jobs:
     name: IaC & policy checks (Checkov + Conftest)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Checkov (Dockerfile + Kubernetes)
         run: |
           pip install checkov==3.2.469
@@ -75,8 +75,8 @@ jobs:
     name: Unit tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
       - run: pip install -r requirements-dev.txt
@@ -92,7 +92,7 @@ jobs:
       packages: write          # push to GitHub Container Registry
       security-events: write   # upload findings to the Security tab
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set image name (registry requires lowercase)
         run: echo "IMAGE_NAME=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"

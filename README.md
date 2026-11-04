@@ -33,6 +33,8 @@ push / PR
 
 **Real finding during development:** pip-audit blocked the first build because `flask==3.1.2` had a published advisory (PYSEC-2026-2151). Upgrading to 3.1.3 cleared the gate — exactly the workflow this pipeline is designed to enforce.
 
+**Second finding, on the first GitHub run:** Semgrep's Flask ruleset flagged the local dev server binding to `0.0.0.0`. It was changed to `127.0.0.1`; the container uses gunicorn, so production behavior is unchanged. The fix went in instead of a suppression comment.
+
 ## Hardening applied
 
 **Container (`Dockerfile`)**
