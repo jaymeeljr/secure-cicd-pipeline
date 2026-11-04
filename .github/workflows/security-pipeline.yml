@@ -100,34 +100,33 @@ jobs:
       - name: Build image
         run: docker build -t "$IMAGE_NAME:${{ github.sha }}" .
 
+      # Trivy runs from its official, version-pinned image; it reads the local
+      # image through the Docker socket and writes reports into the workspace.
       - name: Trivy — fail on HIGH/CRITICAL vulnerabilities
-        uses: aquasecurity/trivy-action@v0.36.0
-        with:
-          image-ref: ${{ env.IMAGE_NAME }}:${{ github.sha }}
-          severity: HIGH,CRITICAL
-          ignore-unfixed: true
-          exit-code: "1"
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy:0.70.0 image \
+            --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 \
+            "$IMAGE_NAME:${{ github.sha }}"
 
       - name: Trivy — SARIF report for the Security tab
         if: always()
-        uses: aquasecurity/trivy-action@v0.36.0
-        with:
-          image-ref: ${{ env.IMAGE_NAME }}:${{ github.sha }}
-          format: sarif
-          output: trivy-results.sarif
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$PWD:/out" \
+            aquasec/trivy:0.70.0 image --format sarif --output /out/trivy-results.sarif \
+            "$IMAGE_NAME:${{ github.sha }}"
 
       - name: Upload SARIF
-        if: always()
+        if: always() && hashFiles('trivy-results.sarif') != ''
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: trivy-results.sarif
 
       - name: Generate SBOM (CycloneDX)
-        uses: aquasecurity/trivy-action@v0.36.0
-        with:
-          image-ref: ${{ env.IMAGE_NAME }}:${{ github.sha }}
-          format: cyclonedx
-          output: sbom.cdx.json
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$PWD:/out" \
+            aquasec/trivy:0.70.0 image --format cyclonedx --output /out/sbom.cdx.json \
+            "$IMAGE_NAME:${{ github.sha }}"
 
       - uses: actions/upload-artifact@v4
         with:
