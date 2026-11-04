@@ -1,0 +1,29 @@
+# Project-specific Semgrep rules, run alongside the public registry rulesets.
+rules:
+  - id: flask-debug-hardcoded-true
+    languages: [python]
+    severity: ERROR
+    message: Flask debug mode must never be hardcoded to True (enables the interactive debugger / RCE).
+    pattern: $APP.run(..., debug=True, ...)
+
+  - id: flask-hardcoded-secret-key
+    languages: [python]
+    severity: ERROR
+    message: Do not hardcode the Flask SECRET_KEY; load it from the environment or a secrets manager.
+    pattern-either:
+      - pattern: $APP.secret_key = "..."
+      - pattern: $APP.config["SECRET_KEY"] = "..."
+
+  - id: subprocess-shell-true
+    languages: [python]
+    severity: ERROR
+    message: subprocess with shell=True enables command injection; pass an argument list instead.
+    pattern: subprocess.$FUNC(..., shell=True, ...)
+
+  - id: insecure-yaml-load
+    languages: [python]
+    severity: ERROR
+    message: yaml.load without SafeLoader can execute arbitrary code; use yaml.safe_load.
+    patterns:
+      - pattern: yaml.load(...)
+      - pattern-not: yaml.load(..., Loader=yaml.SafeLoader, ...)

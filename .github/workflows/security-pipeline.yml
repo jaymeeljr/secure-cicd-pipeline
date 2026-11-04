@@ -1,0 +1,151 @@
+name: Secure CI/CD Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Least privilege for the default token; jobs request more only if needed.
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------- Gate 1: leaked secrets ----------------
+  secret-scan:
+    name: Secret detection (Gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # scan full history, not only the last commit
+      - name: Run Gitleaks
+        run: |
+          docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.28.0 \
+            detect --source /repo --redact --verbose --exit-code 1
+
+  # ---------------- Gate 2: insecure code ----------------
+  sast:
+    name: Static analysis (Semgrep)
+    runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run Semgrep
+        run: semgrep scan --config p/python --config p/flask --config p/secrets --config .semgrep/ --error --metrics=off app/
+
+  # ---------------- Gate 3: vulnerable dependencies ----------------
+  sca:
+    name: Dependency scan (pip-audit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install pip-audit==2.9.0
+      - run: pip-audit -r requirements.txt --strict
+
+  # ---------------- Gate 4: misconfigured IaC ----------------
+  iac-policy:
+    name: IaC & policy checks (Checkov + Conftest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkov (Dockerfile + Kubernetes)
+        run: |
+          pip install checkov==3.2.469
+          checkov -d . --framework dockerfile,kubernetes --compact --quiet
+      - name: Install Conftest
+        run: |
+          curl -sSL https://github.com/open-policy-agent/conftest/releases/download/v0.62.0/conftest_0.62.0_Linux_x86_64.tar.gz | tar xz conftest
+          sudo mv conftest /usr/local/bin/
+      - name: Verify policies have passing unit tests
+        run: conftest verify --policy policy/
+      - name: Enforce policies on manifests
+        run: conftest test k8s/ --policy policy/
+
+  # ---------------- Unit tests ----------------
+  test:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install -r requirements-dev.txt
+      - run: pytest -q
+
+  # ---------------- Gate 5: build + image scan ----------------
+  build-and-scan:
+    name: Build & scan image (Trivy)
+    runs-on: ubuntu-latest
+    needs: [secret-scan, sast, sca, iac-policy, test]   # nothing is built until every gate passes
+    permissions:
+      contents: read
+      packages: write          # push to GitHub Container Registry
+      security-events: write   # upload findings to the Security tab
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set image name (registry requires lowercase)
+        run: echo "IMAGE_NAME=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
+
+      - name: Build image
+        run: docker build -t "$IMAGE_NAME:${{ github.sha }}" .
+
+      - name: Trivy — fail on HIGH/CRITICAL vulnerabilities
+        uses: aquasecurity/trivy-action@0.33.1
+        with:
+          image-ref: ${{ env.IMAGE_NAME }}:${{ github.sha }}
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
+      - name: Trivy — SARIF report for the Security tab
+        if: always()
+        uses: aquasecurity/trivy-action@0.33.1
+        with:
+          image-ref: ${{ env.IMAGE_NAME }}:${{ github.sha }}
+          format: sarif
+          output: trivy-results.sarif
+
+      - name: Upload SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-results.sarif
+
+      - name: Generate SBOM (CycloneDX)
+        uses: aquasecurity/trivy-action@0.33.1
+        with:
+          image-ref: ${{ env.IMAGE_NAME }}:${{ github.sha }}
+          format: cyclonedx
+          output: sbom.cdx.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom.cdx.json
+
+      - name: Push image (main branch only)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker push "$IMAGE_NAME:${{ github.sha }}"
+
+      - name: Render deployment manifest with immutable tag
+        run: |
+          sed "s|ghcr.io/OWNER/secure-cicd-pipeline:IMAGE_TAG|$IMAGE_NAME:${{ github.sha }}|" k8s/deployment.yaml > deployment.rendered.yaml
+          cat deployment.rendered.yaml | grep image:
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: k8s-manifests
+          path: deployment.rendered.yaml

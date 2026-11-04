@@ -1,0 +1,24 @@
+# Default-deny for the namespace, then allow only HTTP traffic into task-api.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: task-api
+spec:
+  podSelector: {}
+  policyTypes: ["Ingress", "Egress"]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: task-api-allow-http
+  namespace: task-api
+spec:
+  podSelector:
+    matchLabels:
+      app: task-api
+  policyTypes: ["Ingress"]
+  ingress:
+    - ports:
+        - protocol: TCP
+          port: 8080
