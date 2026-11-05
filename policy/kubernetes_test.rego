@@ -46,3 +46,9 @@ test_missing_memory_limit_denied if {
 	bad := json.patch(secure_deployment, [{"op": "remove", "path": "/spec/template/spec/containers/0/resources"}])
 	count(deny) > 0 with input as bad
 }
+
+# Regression test: a missing field must be denied, not silently allowed.
+test_missing_privilege_escalation_field_denied if {
+	bad := json.patch(secure_deployment, [{"op": "remove", "path": "/spec/template/spec/containers/0/securityContext/allowPrivilegeEscalation"}])
+	count(deny) > 0 with input as bad
+}

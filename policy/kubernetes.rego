@@ -23,7 +23,7 @@ deny contains msg if {
 
 deny contains msg if {
 	some c in containers
-	c.securityContext.allowPrivilegeEscalation != false
+	not c.securityContext.allowPrivilegeEscalation == false
 	msg := sprintf("container '%s' must set allowPrivilegeEscalation=false", [c.name])
 }
 
